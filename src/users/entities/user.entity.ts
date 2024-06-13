@@ -1,13 +1,16 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { AbstractDocument } from '../../common/database/abstract.schema';
+import { AbstractEntity } from '../../common/database/abstract.enitity';
+import { Field, ObjectType } from '@nestjs/graphql';
 
 @Schema({ versionKey: false })
-export class UserDocument extends AbstractDocument {
+@ObjectType()
+export class User extends AbstractEntity {
   @Prop()
+  @Field()
   email: string;
 
   @Prop()
   password: string;
 }
 
-export const UserSchema = SchemaFactory.createForClass(UserDocument);
+export const UserEntity = SchemaFactory.createForClass(User);
