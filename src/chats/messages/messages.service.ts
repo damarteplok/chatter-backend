@@ -7,7 +7,6 @@ import { GetMessagesArgs } from './dto/get-messages.args';
 import { PUB_SUB } from 'src/common/constans/injection-tokens';
 import { PubSub } from 'graphql-subscriptions';
 import { MESSAGE_CREATED } from './constans/pubsub-triggers';
-import { MessageCreatedArgs } from './dto/message-created.args';
 import { MessageDocument } from './entities/message.document';
 import { UsersService } from 'src/users/users.service';
 
@@ -46,11 +45,24 @@ export class MessagesService {
     return message;
   }
 
-  async getMessages({ chatId }: GetMessagesArgs) {
-    return this.chatsRepository.model.aggregate([
+  async countMessages(chatId: string) {
+    return (
+      await this.chatsRepository.model.aggregate([
+        { $match: { _id: new Types.ObjectId(chatId) } },
+        { $unwind: '$messages' },
+        { $count: 'messages' },
+      ])
+    )[0];
+  }
+
+  async getMessages({ chatId, skip, limit }: GetMessagesArgs) {
+    const messages = await this.chatsRepository.model.aggregate([
       { $match: { _id: new Types.ObjectId(chatId) } },
       { $unwind: '$messages' },
       { $replaceRoot: { newRoot: '$messages' } },
+      { $sort: { createdAt: -1 } },
+      { $skip: skip },
+      { $limit: limit },
       {
         $lookup: {
           from: 'users',
@@ -63,12 +75,15 @@ export class MessagesService {
       { $unset: 'userId' },
       { $set: { chatId } },
     ]);
+
+    for (const message of messages) {
+      message.user = this.usersService.toEntity(message.user);
+    }
+
+    return messages;
   }
 
-  async messageCreated({ chatId }: MessageCreatedArgs) {
-    await this.chatsRepository.findOne({
-      _id: chatId,
-    });
+  async messageCreated() {
     return this.pubSub.asyncIterator(MESSAGE_CREATED);
   }
 }

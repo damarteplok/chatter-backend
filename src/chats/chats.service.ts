@@ -3,10 +3,15 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreateChatInput } from './dto/create-chat.input';
 import { UpdateChatInput } from './dto/update-chat.input';
 import { PipelineStage, Types } from 'mongoose';
+import { PaginationArgs } from 'src/common/dto/pagination';
+import { UsersService } from 'src/users/users.service';
 
 @Injectable()
 export class ChatsService {
-  constructor(private readonly chatRepository: ChatsRepository) {}
+  constructor(
+    private readonly chatRepository: ChatsRepository,
+    private readonly usersService: UsersService,
+  ) {}
 
   async create(createChatInput: CreateChatInput, userId: string) {
     return this.chatRepository.create({
@@ -16,10 +21,26 @@ export class ChatsService {
     });
   }
 
-  async findMany(prePipelineStages: PipelineStage[] = []) {
+  async findMany(
+    prePipelineStages: PipelineStage[] = [],
+    paginationArgs?: PaginationArgs,
+  ) {
     const chats = await this.chatRepository.model.aggregate([
       ...prePipelineStages,
-      { $set: { latestMessage: { $arrayElemAt: ['$messages', -1] } } },
+      {
+        $set: {
+          latestMessage: {
+            $cond: [
+              '$messages',
+              { $arrayElemAt: ['$messages', -1] },
+              { createdAt: new Date() },
+            ],
+          },
+        },
+      },
+      { $sort: { 'latestMessage.createdAt': -1 } },
+      { $skip: paginationArgs.skip },
+      { $limit: paginationArgs.limit },
       { $unset: 'messages' },
       {
         $lookup: {
@@ -35,11 +56,17 @@ export class ChatsService {
         delete chat.latestMessage;
         return;
       }
-      chat.latestMessage.user = chat.latestMessage.user[0];
+      chat.latestMessage.user = this.usersService.toEntity(
+        chat.latestMessage.user[0],
+      );
       delete chat.latestMessage.userId;
       chat.latestMessage.chatId = chat._id;
     });
     return chats;
+  }
+
+  async countChats() {
+    return this.chatRepository.model.countDocuments({});
   }
 
   async findOne(_id: string) {
